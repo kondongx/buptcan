@@ -23,13 +23,14 @@ pub fn login() -> Result<LoginStatus, reqwest::Error> {
 
 pub fn logout() -> Result<LoginStatus, reqwest::Error> {
     reqwest::blocking::get("http://10.3.8.211/logout")?;
-    Ok(LoginStatus::NotLogged)
+    Ok(LoginStatus::Logged)
 }
 
 pub fn select_command() {
     let selections = &["login", "logout"];
 
-    let selection = Select::with_theme(&ColorfulTheme::default())
+    let theme = ColorfulTheme::default();
+    let selection = Select::with_theme(&theme)
         .with_prompt("Bupt Campus Network")
         .default(0)
         .items(&selections[..])
@@ -37,8 +38,8 @@ pub fn select_command() {
         .unwrap();
 
     match selection {
-        0 => login().expect("Network Error!"),
-        1 => logout().expect("Network Error!"),
+        0 => login().unwrap(),
+        1 => logout().unwrap(),
         _ => LoginStatus::NotLogged,
     };
 
@@ -46,7 +47,8 @@ pub fn select_command() {
 }
 
 pub fn get_account() -> Account {
-    let user: String = Input::with_theme(&ColorfulTheme::default())
+    let theme = ColorfulTheme::default();
+    let user: String = Input::with_theme(&theme)
         .with_prompt("Student ID")
         .validate_with(|input: &String| {
             if input.len() == 10 {
