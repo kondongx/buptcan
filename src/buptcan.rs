@@ -1,3 +1,5 @@
+use std::fmt::{self, Display, Formatter};
+
 use dialoguer::{theme::ColorfulTheme, Input, Password, Select};
 
 #[derive(Debug)]
@@ -11,31 +13,73 @@ pub enum LoginStatus {
     NotLogged,
 }
 
-pub fn login() -> Result<LoginStatus, reqwest::Error> {
-    let account = get_account();
-    reqwest::blocking::Client::new()
-        .post("http://10.3.8.211/login")
-        .form(&[("user", account.user), ("pass", account.password)])
-        .send()?;
-
-    Ok(LoginStatus::Logged)
+#[derive(Debug)]
+pub enum LoginError {
+    AccountError,
+    NetworkError,
 }
 
-pub fn logout() -> Result<LoginStatus, reqwest::Error> {
+impl std::error::Error for LoginError {}
+
+impl Display for LoginError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            LoginError::AccountError => write!(f, ">>> Incorrect username or password <<<"),
+            LoginError::NetworkError => write!(f, ">>> Cannot access BUPT campus network <<<"),
+        }
+    }
+}
+
+impl From<reqwest::Error> for LoginError {
+    fn from(_: reqwest::Error) -> Self {
+        LoginError::NetworkError
+    }
+}
+
+pub fn login() -> Result<LoginStatus, LoginError> {
+    // crate `ctrlc` cannot handle ctrlc in blocking read
+    let account = match get_account() {
+        Ok(account) => account,
+        Err(_) => std::process::exit(1),
+    };
+    let res = reqwest::blocking::Client::new()
+        .post("http://10.3.8.211/login")
+        .form(&[("user", account.user), ("pass", account.password)])
+        .send()?
+        .text()?;
+
+    if res.contains("登录成功") {
+        Ok(LoginStatus::Logged)
+    } else {
+        Err(LoginError::AccountError)
+    }
+}
+
+pub fn logout() -> Result<LoginStatus, LoginError> {
     reqwest::blocking::get("http://10.3.8.211/logout")?;
-    Ok(LoginStatus::Logged)
+    Ok(LoginStatus::NotLogged)
 }
 
 pub fn select_command() {
+    if check_network() == NetworkStatus::CannotAccess {
+        println!("{}", LoginError::NetworkError);
+        std::process::exit(1);
+    }
+
     let selections = &["login", "logout"];
 
     let theme = ColorfulTheme::default();
-    let selection = Select::with_theme(&theme)
+
+    // crate `ctrlc` cannot handle ctrlc in blocking read
+    let selection = match Select::with_theme(&theme)
         .with_prompt("Bupt Campus Network")
         .default(0)
         .items(&selections[..])
         .interact()
-        .unwrap();
+    {
+        Ok(selection) => selection,
+        Err(_) => std::process::exit(1),
+    };
 
     let res = match selection {
         0 => login(),
@@ -44,15 +88,15 @@ pub fn select_command() {
     };
 
     match res {
-        Ok(_) => println!("{} is done", selections[selection]),
-        Err(_) => {
-            println!(">>>Network Error!<<<");
-            std::process::exit(1);
-        }
-    }
+        Ok(_) => println!("{} successful", selections[selection].to_uppercase()),
+        Err(e) => match e {
+            LoginError::AccountError => println!("{}", LoginError::AccountError),
+            LoginError::NetworkError => println!("{}", LoginError::NetworkError),
+        },
+    };
 }
 
-pub fn get_account() -> Account {
+pub fn get_account() -> Result<Account, std::io::Error> {
     let theme = ColorfulTheme::default();
     let user: String = Input::with_theme(&theme)
         .with_prompt("Student ID")
@@ -63,13 +107,24 @@ pub fn get_account() -> Account {
                 Err("ID length not 10")
             }
         })
-        .interact_text()
-        .unwrap();
+        .interact_text()?;
 
     let password: String = Password::with_theme(&ColorfulTheme::default())
         .with_prompt("Password")
-        .interact()
-        .unwrap();
+        .interact()?;
 
-    Account { user, password }
+    Ok(Account { user, password })
+}
+
+#[derive(PartialEq)]
+pub enum NetworkStatus {
+    CanAccess,
+    CannotAccess,
+}
+
+pub fn check_network() -> NetworkStatus {
+    match reqwest::blocking::get("http://10.3.8.211/index") {
+        Ok(_) => NetworkStatus::CanAccess,
+        Err(_) => NetworkStatus::CannotAccess,
+    }
 }
