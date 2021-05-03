@@ -1,10 +1,15 @@
 use clap::App;
+use shadow_rs::shadow;
+
+shadow!(shadow);
 
 mod buptcan;
 
 fn main() {
+    let long_version = crate::shadow::clap_version();
     let matches = App::new("Bupt Campus Network Utils")
-        .version("0.1.0")
+        .version(shadow::PKG_VERSION)
+        .long_version(long_version.as_str())
         .author("Kevin K. <kondongx@gmail.com>")
         .about("Access Bupt Campus Network with your terminal")
         .subcommand(App::new("i").about("interact with commands"))
