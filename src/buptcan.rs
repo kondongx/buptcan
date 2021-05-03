@@ -37,13 +37,19 @@ pub fn select_command() {
         .interact()
         .unwrap();
 
-    match selection {
-        0 => login().unwrap(),
-        1 => logout().unwrap(),
-        _ => LoginStatus::NotLogged,
+    let res = match selection {
+        0 => login(),
+        1 => logout(),
+        _ => Ok(LoginStatus::NotLogged),
     };
 
-    println!("{} is done", selections[selection]);
+    match res {
+        Ok(_) => println!("{} is done", selections[selection]),
+        Err(_) => {
+            println!(">>>Network Error!<<<");
+            std::process::exit(1);
+        }
+    }
 }
 
 pub fn get_account() -> Account {
