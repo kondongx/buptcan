@@ -30,8 +30,8 @@ impl Display for LoginError {
     }
 }
 
-impl From<reqwest::Error> for LoginError {
-    fn from(_: reqwest::Error) -> Self {
+impl From<ureq::Error> for LoginError {
+    fn from(_: ureq::Error) -> Self {
         LoginError::NetworkError
     }
 }
@@ -42,13 +42,15 @@ pub fn login() -> Result<LoginStatus, LoginError> {
         Ok(account) => account,
         Err(_) => std::process::exit(1),
     };
-    let res = reqwest::blocking::Client::new()
-        .post("http://10.3.8.211/login")
-        .form(&[("user", account.user), ("pass", account.password)])
-        .send()?
-        .text()?;
 
-    if res.contains("登录成功") {
+    let res = ureq::post("http://10.3.8.211/login")
+        .send_form(&[("user", &account.user), ("pass", &account.password)])?;
+
+    if res
+        .into_string()
+        .map_err(|_| LoginError::NetworkError)?
+        .contains("登录成功")
+    {
         Ok(LoginStatus::Logged)
     } else {
         Err(LoginError::AccountError)
@@ -56,7 +58,7 @@ pub fn login() -> Result<LoginStatus, LoginError> {
 }
 
 pub fn logout() -> Result<LoginStatus, LoginError> {
-    reqwest::blocking::get("http://10.3.8.211/logout")?;
+    ureq::get("http://10.3.8.211/logout").call()?;
     Ok(LoginStatus::NotLogged)
 }
 
@@ -123,7 +125,7 @@ pub enum NetworkStatus {
 }
 
 pub fn check_network() -> NetworkStatus {
-    match reqwest::blocking::get("http://10.3.8.211/index") {
+    match ureq::get("http://10.3.8.211/index").call() {
         Ok(_) => NetworkStatus::CanAccess,
         Err(_) => NetworkStatus::CannotAccess,
     }
