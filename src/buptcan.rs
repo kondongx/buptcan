@@ -1,13 +1,21 @@
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    process,
+};
 
-use dialoguer::{theme::ColorfulTheme, Input, Password, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, Input, Password, Select};
 
-#[derive(Debug)]
+use ureq::Response;
+
+use crate::configure::{get_configuration, update_configuration};
+
+#[derive(Debug, PartialEq)]
 pub struct Account {
     pub user: String,
     pub password: String,
 }
 
+#[derive(PartialEq)]
 pub enum LoginStatus {
     Logged,
     NotLogged,
@@ -36,24 +44,40 @@ impl From<ureq::Error> for LoginError {
     }
 }
 
-pub fn login() -> Result<LoginStatus, LoginError> {
+pub fn login(account: &Account) -> Result<LoginStatus, LoginError> {
     // crate `ctrlc` cannot handle ctrlc in blocking read
-    let account = match get_account() {
-        Ok(account) => account,
-        Err(_) => std::process::exit(1),
-    };
 
     let res = ureq::post("http://10.3.8.211/login")
         .send_form(&[("user", &account.user), ("pass", &account.password)])?;
 
-    if res
-        .into_string()
-        .map_err(|_| LoginError::NetworkError)?
-        .contains("登录成功")
-    {
-        Ok(LoginStatus::Logged)
-    } else {
-        Err(LoginError::AccountError)
+    get_login_info(res)
+}
+
+pub fn login_command(account: &Account) {
+    match login(account) {
+        Ok(_) => println!("Login successful"),
+        Err(error) => println!("{}", error),
+    }
+}
+
+pub fn login_with_new_account() {
+    let new_account = get_account_command();
+
+    match login(&new_account) {
+        Ok(LoginStatus::Logged) => {
+            println!("Login successful");
+            ask_update_stored_account(&new_account);
+        }
+        Ok(LoginStatus::NotLogged) => {}
+        Err(error) => match error {
+            LoginError::AccountError => {
+                println!("{}", error);
+                login_with_new_account()
+            }
+            LoginError::NetworkError => {
+                println!("{}", error)
+            }
+        },
     }
 }
 
@@ -62,13 +86,25 @@ pub fn logout() -> Result<LoginStatus, LoginError> {
     Ok(LoginStatus::NotLogged)
 }
 
+pub fn logout_command() {
+    match logout() {
+        Ok(_) => println!("Logout successful"),
+        Err(error) => println!("{}", error),
+    };
+}
+
 pub fn select_command() {
-    if check_network() == NetworkStatus::CannotAccess {
-        println!("{}", LoginError::NetworkError);
-        std::process::exit(1);
+    if LoginStatus::Logged == check_login_status() {
+        println!("You have already logged in.\nUse `buptcan o` to logout");
+        return;
     }
 
-    let selections = &["login", "logout"];
+    let mut selections = Vec::new();
+    let stored_accounts = get_stored_account();
+    for account in &stored_accounts {
+        selections.push(account.user.as_str());
+    }
+    selections.push("login with new account");
 
     let theme = ColorfulTheme::default();
 
@@ -83,19 +119,12 @@ pub fn select_command() {
         Err(_) => std::process::exit(1),
     };
 
-    let res = match selection {
-        0 => login(),
-        1 => logout(),
-        _ => Ok(LoginStatus::NotLogged),
-    };
-
-    match res {
-        Ok(_) => println!("{} successful", selections[selection].to_uppercase()),
-        Err(e) => match e {
-            LoginError::AccountError => println!("{}", LoginError::AccountError),
-            LoginError::NetworkError => println!("{}", LoginError::NetworkError),
-        },
-    };
+    let is_login_with_new_account = stored_accounts.len() == 0 || selection == selections.len() - 1;
+    if is_login_with_new_account {
+        login_with_new_account();
+    } else {
+        login_command(&stored_accounts[selection]);
+    }
 }
 
 pub fn get_account() -> Result<Account, std::io::Error> {
@@ -118,15 +147,70 @@ pub fn get_account() -> Result<Account, std::io::Error> {
     Ok(Account { user, password })
 }
 
-#[derive(PartialEq)]
-pub enum NetworkStatus {
-    CanAccess,
-    CannotAccess,
+pub fn get_account_command() -> Account {
+    match get_account() {
+        Ok(account) => account,
+        Err(_) => std::process::exit(1),
+    }
 }
 
-pub fn check_network() -> NetworkStatus {
-    match ureq::get("http://10.3.8.211/index").call() {
-        Ok(_) => NetworkStatus::CanAccess,
-        Err(_) => NetworkStatus::CannotAccess,
+pub fn ask_update_stored_account(account: &Account) {
+    if Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Do you want to save account?")
+        .default(true)
+        .interact()
+        .unwrap()
+    {
+        update_stored_account(account);
+    }
+}
+
+pub fn update_stored_account(new_account: &Account) {
+    update_configuration(
+        (new_account.user.clone() + ".password").as_str(),
+        new_account.password.as_str(),
+    )
+}
+
+pub fn get_stored_account() -> Vec<Account> {
+    let config = get_configuration();
+    let config = config.as_table().unwrap();
+    let mut accounts = Vec::<Account>::new();
+    for (key, value) in config {
+        accounts.push(Account {
+            user: key.to_owned(),
+            password: value
+                .as_table()
+                .unwrap()
+                .get("password")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        })
+    }
+    accounts
+}
+
+pub fn check_login_status() -> LoginStatus {
+    let res = match ureq::get("http://10.3.8.211/login").call() {
+        Ok(res) => res,
+        Err(_) => {
+            println!("{}", LoginError::NetworkError);
+            process::exit(1);
+        }
+    };
+    get_login_info(res).unwrap()
+}
+
+fn get_login_info(res: Response) -> Result<LoginStatus, LoginError> {
+    let res_str = res.into_string().map_err(|_| LoginError::NetworkError)?;
+
+    if res_str.contains("登录成功") {
+        Ok(LoginStatus::Logged)
+    } else if res_str.contains("密码错误") {
+        Err(LoginError::AccountError)
+    } else {
+        Ok(LoginStatus::NotLogged)
     }
 }

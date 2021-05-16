@@ -4,6 +4,8 @@ use shadow_rs::shadow;
 shadow!(shadow);
 
 mod buptcan;
+mod config;
+mod configure;
 
 fn main() {
     let long_version = crate::shadow::clap_version();
@@ -13,6 +15,7 @@ fn main() {
         .author("Kevin K. <kondongx@gmail.com>")
         .about("Access Bupt Campus Network with your terminal")
         .subcommand(App::new("i").about("interact with commands"))
+        .subcommand(App::new("o").about("logout"))
         .get_matches();
 
     // handle situation that cursor disappear when hit ctrlc
@@ -21,7 +24,9 @@ fn main() {
     })
     .expect("Set ctrlc handle error");
 
-    if let Some(("i", _)) = matches.subcommand() {
-        buptcan::select_command()
+    match matches.subcommand() {
+        Some(("i", _)) => buptcan::select_command(),
+        Some(("o", _)) => buptcan::logout_command(),
+        _ => {}
     };
 }
