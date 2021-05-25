@@ -25,8 +25,8 @@ fn main() {
     .expect("Set ctrlc handle error");
 
     match matches.subcommand() {
-        Some(("i", _)) => buptcan::select_command(),
-        Some(("o", _)) => buptcan::logout_command(),
+        Some(("i", _)) => buptcan::login_subcommand(),
+        Some(("o", _)) => buptcan::logout_subcommand(),
         _ => {}
     };
 }

@@ -53,7 +53,7 @@ pub fn login(account: &Account) -> Result<LoginStatus, LoginError> {
     get_login_info(res)
 }
 
-pub fn login_command(account: &Account) {
+pub fn handle_login(account: &Account) {
     match login(account) {
         Ok(_) => println!("Login successful"),
         Err(error) => println!("{}", error),
@@ -61,7 +61,7 @@ pub fn login_command(account: &Account) {
 }
 
 pub fn login_with_new_account() {
-    let new_account = get_account_command();
+    let new_account = handle_get_account();
 
     match login(&new_account) {
         Ok(LoginStatus::Logged) => {
@@ -86,14 +86,14 @@ pub fn logout() -> Result<LoginStatus, LoginError> {
     Ok(LoginStatus::NotLogged)
 }
 
-pub fn logout_command() {
+pub fn logout_subcommand() {
     match logout() {
         Ok(_) => println!("Logout successful"),
         Err(error) => println!("{}", error),
     };
 }
 
-pub fn select_command() {
+pub fn login_subcommand() {
     if LoginStatus::Logged == check_login_status() {
         println!("You have already logged in.\nUse `buptcan o` to logout");
         return;
@@ -123,7 +123,7 @@ pub fn select_command() {
     if is_login_with_new_account {
         login_with_new_account();
     } else {
-        login_command(&stored_accounts[selection]);
+        handle_login(&stored_accounts[selection]);
     }
 }
 
@@ -147,7 +147,7 @@ pub fn get_account() -> Result<Account, std::io::Error> {
     Ok(Account { user, password })
 }
 
-pub fn get_account_command() -> Account {
+pub fn handle_get_account() -> Account {
     match get_account() {
         Ok(account) => account,
         Err(_) => std::process::exit(1),
